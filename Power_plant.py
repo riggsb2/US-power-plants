@@ -12,7 +12,26 @@ import os
 import re
 
 def Clean(df):
+    #Finds header values based on 'Year' Tag
+    #Sets Plant Code as Index
     #dataframe.replace(to_replace=['.'],value=[0],inplace=True)
+    head_loc = np.where(df=='Plant Name')[0]
+    if head_loc:
+        head_loc = head_loc.item()
+        idx = 'Plant Name'
+    else:
+        head_loc = np.where(df=='PLANT NAME')[0]
+        head_loc= head_loc.item()
+        idx = 'PLANT NAME'
+        
+    df.columns = df.iloc[head_loc]
+    todrop = np.arange(0,head_loc+1,1)
+    df.drop(todrop,inplace=True)
+    
+    df.set_index(idx,inplace=True) 
+    df.columns = df.columns.str.replace('\n',' ')
+    df.columns = df.columns.str.replace('  ',' ')
+    #df.columns = re.sub('\n', ' ', df.columns).strip()
     mask = df.isin(['.'])   
     df = df.where(~mask, other=0)
     mask = df.isin([0])   
@@ -161,51 +180,88 @@ def PricebyMoverType(df1,df2,header1,header2):
     return()
 MMBTU_MWH = 0.29307
 
+
+IDNames = ['Plant Id', 'Plant Code','Plant ID']
+YearNames = ['Year','YEAR']
+PlantNames = ['Plant Name']
+StateNames = ['State', 'Plant State']
+MoverNames = ['Reported Prime Mover']
+FuelNames = ['AER Fuel Type Code']
+ElecFuelNames = ['Elec Fuel Consumption MMBtu','ELEC FUEL CONSUMPTION MMBTUS']
+GenNames = ['Net Generation (Megawatthours)','NET GENERATION (megawatthours)']
+
+RevenueNames = ['Revenue from Resale','Revenue from Resale (thousand dollars)']
+SalesNames = ['Sales for Resale','SALES FOR RESALE']
+
 master_df = pd.DataFrame()
 
+
+
+#For reading all files in a directory
 #files = [f for f in os.listdir('.') if os.path.isfile(f)]
  
 xls = pd.ExcelFile('Files to Read.xlsx')
 file_df = xls.parse(header =0)
 file_df.sort_values(by='Year', inplace=True, ascending=False)
 
-for file in file_df['File']:
-    print(file)
-    xls = pd.ExcelFile(file)
-    sheets = xls.sheet_names
-    
-    idx = file_df.index[file_df['File'] == file].tolist()
-    Type = file_df.loc[idx,'Type'].item()
+print(file_df)
+years = np.arange(min(file_df['Year']),max(file_df['Year']+1),1)
+#years = years[::-1] #for descending years
+print(years)
+
+for year in years:
+    print()
+    print(year)
+    files = file_df.loc[file_df['Year'] == year] 
+    DisFile = files.loc[files['Type'] == 'DIS', 'File'].item()
+    GFDFile = files.loc[files['Type'] == 'GFD', 'File'].item()
 
     temp_df = pd.DataFrame()
 
-    if Type =='Dis':
-        print('Disposition File')
-        df = xls.parse(sheets[0],header =4, index_col=4)
-        df = Clean(df)
-        header = list(df.columns.values)
-        reportheader(header)
-        temp_df['Plant Name']=df[header[5]]
-        temp_df['Price of El']=100*df[header[18]]/df[header[14]]
-
-    elif Type=='GFD':
-        print('Gen and Fuel File')
-
-        df = xls.parse(sheets[0], header =5, index_col =0)
-        df = Clean(df)
-        header = list(df.columns.values)
-        reportheader(header)
-
-        temp_df['Year'] = df[header[95]]
-        temp_df['Plant State'] = df[header[5]]
-        temp_df['Plant Name'] = df[header[2]]
-        temp_df['Primary Mover'] = df[header[12]]
-        temp_df['AER Fuel Code'] = df[header[14]]
-        temp_df['EFficiency'] = (df[header[94]]/(df[header[93]]*MMBTU_MWH))
+    print('Gen and Fuel File')
+    print(GFDFile)
+    xls = pd.ExcelFile(GFDFile)
+    sheets = xls.sheet_names
+    df = xls.parse(sheets[0])
+    df = Clean(df)    
+    header = list(df.columns.values)
+    YearCol = set(YearNames) & set(header)
+    StateCol = set(StateNames) & set(header)
+    PlCodeCol = set(IDNames) & set(header)
+    MoverCol = set(MoverNames) & set(header)
+    FuelCol = set(FuelNames) & set(header)
+    ElecFuelCol = set(ElecFuelNames) & set(header)
+    GenCol = set(GenNames) & set(header)
+    temp_df['Year'] = df[YearCol.pop()]
+    temp_df['Plant State'] = df[StateCol.pop()]
+    temp_df['Plant Code'] = df[PlCodeCol.pop()]
+    temp_df['Primary Mover'] = df[MoverCol.pop()]
+    temp_df['AER Fuel Code'] = df[FuelCol.pop()]
+    temp_df['EFficiency'] = (df[GenCol.pop()]/(df[ElecFuelCol.pop()]*MMBTU_MWH))
+    #except:
+     #   reportheader(header)
+      #  print(YearCol, StateCol, PlCodeCol, MoverCol, FuelCol, ElecFuelCol, GenCol)
+       # n = input()
+    print()
+    print('Disposition File')    
+    print(DisFile)
+    temp_df2=pd.DataFrame()
+    xls = pd.ExcelFile(DisFile)
+    sheets = xls.sheet_names
+    df = xls.parse(sheets[0])
+    df = Clean(df)
+    header = list(df.columns.values)
+    
+    RevCol = set(RevenueNames) & set(header)
+    SalesCol = set(SalesNames) & set(header)
+    if RevCol and SalesCol:
+        temp_df2['Price of El']=100*df[RevCol.pop()]/df[SalesCol.pop()]
+        temp_df = temp_df.join(temp_df2, how='outer')
 
     master_df = master_df.append(temp_df)
     
-print(master_df.head(100))
+print(master_df.head())
+print(master_df.tail())
 '''
 file = "EIA923_Schedules_2_3_4_5_M_12_2015_Final_Revision.xlsx"
 xls = pd.ExcelFile(file)
