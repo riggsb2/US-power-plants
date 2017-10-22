@@ -45,29 +45,32 @@ def reportheader(header):
 def Statplot(df,sub,Title):  
     param_types = df[sub].unique()
     for inst in param_types:
-        fig = plt.figure()
-        ax1 = fig.add_subplot(111, aspect='equal')
 
         inst_df = df[df[sub]==inst]
         inst_df.set_index('Year',inplace=True) 
 
-        #my_xticks = (inst_df.index.values)
-        x = inst_df.index.values
+        xticks = (inst_df.index.values)
+        x = np.arange(1,len(xticks)+1,1)
         y = (inst_df['Mean'].values)*100
         yerr = (inst_df['StDev'].values)*100
 
-        ax1.set_xlim([min(x)-1,max(x)+1])
-        ax1.set_ylim([0,1])
-        plt.title('{0:s}{1:s}'.format(Title,inst))
-        plt.errorbar(x,y,yerr,linestyle='-', marker='^')
-        plt.xlabel('Year', fontsize=18)
-        plt.ylabel('Plant Efficiency', fontsize=16)
-        
-        
         if not os.path.isdir(os.path.join(' '.join((sub,'time series')))):
             os.makedirs(os.path.join(' '.join((sub,'time series'))))
         os.chdir(os.path.join(' '.join((sub,'time series'))))
-        fig.savefig(' '.join((sub,inst,'.png')), facecolor = 'white',dpi=90, bbox_inches='tight')
+        
+        fig = plt.figure()
+        ax1 = fig.add_subplot(111)
+        ax1.errorbar(x,y,yerr,linestyle='-', marker='^')
+
+        #ax1.set_xlim([min(x)-1,max(x)+1])
+        ax1.set_ylim([0,100])
+        ax1.set_xticks(x)
+        ax1.set_xticklabels(xticks)
+        ax1.set_title('{0:s}{1:s}'.format(Title,inst))
+        ax1.set_xlabel('Year', fontsize=18)
+        ax1.set_ylabel('Plant Efficiency', fontsize=16)
+
+        fig.savefig(''.join((sub,inst,'.png')), facecolor = 'white',dpi=90, bbox_inches='tight')
         os.chdir('..')
     return()
     
