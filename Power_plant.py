@@ -235,12 +235,10 @@ def TrendBoxplot(df,name, Rsq_lim = 0,lower=-100,upper=100):
                         median = moverfuel_df[moverfuel].median(skipna=True)
                         stdev = moverfuel_df[moverfuel].std(skipna=True)
                         stat_df.ix[moverfuel]=[median,stdev]
-                print(mover)
-                print(moverfuel_df)
                 moverfuel_df.dropna(1,how='all',inplace=True)
                 print(moverfuel_df)
                 
-                if len(moverfuel_df)>1:
+                if len(list(moverfuel_df.columns.values))>0:
                     sns.boxplot(moverfuel_df)
                     plt.title(' '.join((mover,'trend Box Plot')))
                     plt.xlabel('Fuel Type')
@@ -256,7 +254,6 @@ def TrendBoxplot(df,name, Rsq_lim = 0,lower=-100,upper=100):
                 median = mover_df[mover].median(skipna=True)
                 stdev = mover_df[mover].std(skipna=True)
                 stat_df.ix[mover]=[median,stdev]
-            n=input()
 
     mover_df.sort_index(inplace=True)
     mover_df.dropna(1,how='all',inplace=True)
