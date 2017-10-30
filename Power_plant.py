@@ -450,12 +450,12 @@ print('Efficiency Trends')
 Efftrends = MoverTrends(master_df,'Efficiency',5)
 Efftrends.to_csv('Efficiency Trend df.csv',delimiter = ',')
 TrendBoxplot(Efftrends,'Efficiency',0.7,-0.25,0.25)
-
+'''
 print('Selling Price Trends')
 Pricetrends = MoverTrends(master_df,'Price of El',4)
 Pricetrends.to_csv('Selling Price Trend df.csv',delimiter = ',')
 TrendBoxplot(Pricetrends,'Price of El',0.6,-0.25,0.25)
-
+'''
 print('State Portfolio')
 EnergyPort = StatePortfolio(master_df)
 EnergyPort.to_csv('State distribution df.csv',delimiter = ',')
