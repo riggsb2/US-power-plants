@@ -6,29 +6,22 @@ Created on Mon Jan  8 15:12:06 2018
 @author: riggs
 """
 
-from bokeh.plotting import figure, output_file, show
-from bokeh.charts import Bar
+import Analyzer as An
+import matplotlib.pyplot as plt
+import seaborn as sns
 
-import pandas as pd
-import os
+master_df = An.LoadMaster()
 
-def LoadResultDF(file):
-    os.chdir(os.path.join('Results'))
-    df = pd.read_csv(file)
-    os.chdir('..')
-    return df
+Fuel_gen = master_df.groupby(['Year', 'AER Fuel Code']).agg({'Net Generation MWh': 'sum'})
+Fuel_gen = Fuel_gen[Fuel_gen['Net Generation MWh']>0]
+
+threshold = 0.05
+Fuel_gen['Frac'] = Fuel_gen.groupby(['Year']).apply(lambda x: x / float(x.sum()))
+Fuel_gen = Fuel_gen[Fuel_gen['Frac']>threshold]
+
+Fuel_gen.reset_index(inplace = True)
+
+time_df = Fuel_gen.groupby(['Year'], as_index = False)['Net Generation MWh'].sum()
 
 
-df = LoadResultDF('Plant State_AER Fuel Code_Fuel Consumption MWh..csv')
-print(df.head())
 
-
-# output to static HTML file
-output_file("lines.html")
-
-# add a line renderer with legend and line thickness
-
-bar = Bar(df, values='timing', label='interpreter', stack='sample', agg='mean',
-          title="Python Interpreter Sampling", legend='top_right', plot_width=400)
-
-show(bar)

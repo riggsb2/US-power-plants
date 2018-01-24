@@ -52,6 +52,8 @@ def GenDataset():
     os.chdir(os.path.join('Sources'))
 
     for year in years:
+        start = time.ctime()
+        print('Start', start)
         files = file_df.loc[file_df['Year'] == year] 
         GFDFile = files.loc[files['Type'] == 'GFD', 'File'].item()
         #OMFile = files.loc[files['Type'] == 'OM', 'File'].item()
@@ -105,7 +107,10 @@ def GenDataset():
             month_df = month_df.join(df.iloc[:,idx_s:idx_f])
             
             tdf = pd.DataFrame()
-            df= xls.parse(sheets[4])
+            if year == 2016:
+                df= xls.parse(sheets[5])
+            else:
+                df= xls.parse(sheets[4])
             df=Clean(df)
             
             header = list(df.columns.values)
@@ -171,8 +176,11 @@ def GenDataset():
     #print(master_df.head())
     
     cost_df.to_csv('Cost Dataset.csv')
-    #master_df.to_csv('Condensed Dataset.csv')
+    master_df.to_csv('Condensed Dataset.csv')
     os.chdir('..')
+    end = time.ctime()
+    print('End', end, ' Run time: ', end-start)
+
 
 def Clean(df):
 
@@ -303,6 +311,15 @@ def PortfolioGeneration():
     print('Plant State','AER Fuel Code','Fuel Consumption MWh')
     TimePortfolio(master_df,'Plant State','AER Fuel Code','Fuel Consumption MWh')
 
+    print('US Over Time with Fuel Use')
+    Fuel_gen = master_df.groupby(['Year', 'AER Fuel Code']).agg({'Net Generation MWh': 'sum'})
+    Fuel_gen = Fuel_gen[Fuel_gen['Net Generation MWh']>0]    
+    threshold = 0.05
+    Fuel_gen['Frac'] = Fuel_gen.groupby(['Year']).apply(lambda x: x / float(x.sum()))
+    Fuel_gen = Fuel_gen[Fuel_gen['Frac']>threshold]
+    Fuel_gen.reset_index(inplace = True)
+    SaveResultDF(Fuel_gen, 'Time Generation with Fuel')
+    
     #removes all utilites with less than 30 plants
     utility_sample = 30
     top_Ut= master_df['Utility'].value_counts()
@@ -318,7 +335,9 @@ def PortfolioGeneration():
     
     print('Utility','Primary Mover', 'Net Generation MWh')
     TimePortfolio(utilities,'Utility','Primary Mover', 'Net Generation MWh')
+    
 
+    
     return
 
 
@@ -380,9 +399,12 @@ def SaveResultDF(df,file):
 
 #GenDataset()
 
-#master_df = LoadMaster()
-cost_df = LoadCost()
+master_df = LoadMaster()
+#cost_df = LoadCost()
 
+PortfolioGeneration()
+
+'''
 fuels = ['Coal','Natural Gas','Petroleum']
 for fuel in fuels:
     fuel_df = cost_df['Elec Pric c/kWh'][(cost_df['Fuel Group']==fuel)&(cost_df['Year']==2015)]
@@ -441,6 +463,8 @@ plt.close()
 #print(len(master_df['Plant Code'].unique()))
 #master_df = SecondClean(master_df)
 #MetaAnalysis(master_df)
+'''
+
 '''
 Utility_df = master_df[['Year','Utility','Net Generation MWh']]
 Utility_df = Utility_df.groupby(['Utility','Year'],axis=0, as_index = False).sum()
