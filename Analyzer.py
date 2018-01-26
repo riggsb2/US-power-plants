@@ -22,6 +22,15 @@ def GenDataset():
     ElecFuelNames = ['Elec Fuel Consumption MMBtu','ELEC FUEL CONSUMPTION MMBTUS']
     GenNames = ['Net Generation (Megawatthours)','NET GENERATION (megawatthours)']
     
+    #From 860 Reports
+    Plant_Codes = ['PLNTCODE,N,5,0','PLNTCODE','PLANT_CODE','Plant Code']
+    County = ['CNTYNAME,C,20','CNTYNAME','COUNTY','County']
+    Zipcode = ['PLNTZIP,C,5','PLNTZIP','ZIP5','Zip']
+    Sector= ['SECTOR_NAME','Sector Name']
+    SectorNum = ['SECTOR_NUMBER','SECTOR','Sector']
+    Lat = ['Latitude']
+    Long = ['Longitude']
+    
     #for cost dataframe
     Fuel_Type = ['FUEL_GROUP','Fuel_Group']
     Source = ['SUPPLIER','Supplier']
@@ -46,6 +55,7 @@ def GenDataset():
     file_df.sort_values(by='Year', inplace=True, ascending=False)
     
     years = np.arange(min(file_df['Year']),max(file_df['Year']+1),1)
+    
     master_df = pd.DataFrame()
     cost_df = pd.DataFrame()
     
@@ -54,8 +64,10 @@ def GenDataset():
     for year in years:
         start = time.ctime()
         print('Start', start)
-        files = file_df.loc[file_df['Year'] == year] 
+        files = file_df.loc[file_df['Year'] == year]
+
         GFDFile = files.loc[files['Type'] == 'GFD', 'File'].item()
+        INFOFile =  files.loc[files['Type'] == 'INFO', 'File'].item()
         #OMFile = files.loc[files['Type'] == 'OM', 'File'].item()
         
         print()
@@ -68,7 +80,7 @@ def GenDataset():
         sheets = xls.sheet_names
       
         df = xls.parse(sheets[0])
-        df = Clean(df)
+        df = Clean(df,IDNames)
         #df = df[df.index!='State-Fuel Level Increment']
         df = df[df['Plant Name']!='State-Fuel Level Increment']
 
@@ -86,16 +98,36 @@ def GenDataset():
         temp_df['Year'] = df[YearCol.pop()]
         temp_df['Utility'] = df[UtilityCol[0]]
         temp_df['Plant State'] = df[StateCol[0]]
-        temp_df['Plant Code'] = df[PlCodeCol[0]]
+        temp_df['Plant Code'] = df[PlCodeCol[0]].astype(int)
         temp_df['Primary Mover'] = df[MoverCol[0]]
         temp_df['AER Fuel Code'] = df[FuelCol[0]]
         temp_df['Fuel Consumption MWh'] = df[ElecFuelCol[0]]*MMBTU_MWH
         temp_df['Net Generation MWh'] = df[GenCol[0]]
         temp_df['Efficiency'] = (df[GenCol[0]]/(df[ElecFuelCol[0]]*MMBTU_MWH))
-                
-        #temp_df = temp_df[temp_df.index!='State-Fuel Level Increment']
-        master_df = master_df.append(temp_df)
         
+        print()
+        print('INFO File')
+        print(INFOFile)
+        INFO_df = pd.read_csv(INFOFile,header=None)
+        INFO_df = Clean(INFO_df,Plant_Codes)
+        
+        header = list(INFO_df.columns.values)
+        
+        CountyCol = list(set(County) & set(header))
+        ZipCol = list(set(Zipcode) & set(header))
+        PlCodeCol = list(set(Plant_Codes) & set(header))
+
+        
+        temp_info = pd.DataFrame()
+        temp_info['County'] = INFO_df[CountyCol[0]].astype(str)
+        temp_info['Zipcode'] = INFO_df[ZipCol[0]].astype(str)
+        temp_info['Plant Code'] = INFO_df[PlCodeCol[0]].astype(int)
+        
+        temp_df = pd.merge(temp_df, temp_info, on='Plant Code', how='outer')
+        
+        #temp_df = temp_df[temp_df.index!='State-Fuel Level Increment']
+        master_df = master_df.append(temp_df)        
+
         #checks to see if receipts exists
         if len(sheets)>3:
            
@@ -111,7 +143,7 @@ def GenDataset():
                 df= xls.parse(sheets[5])
             else:
                 df= xls.parse(sheets[4])
-            df=Clean(df)
+            df=Clean(df,IDNames)
             
             header = list(df.columns.values)
             YearCol = list(set(YearNames) & set(header))
@@ -149,11 +181,12 @@ def GenDataset():
                     sub_fuel = sub_month[sub_month['AER Fuel Code']==AER_fuel]
 
                     frank = sub_fuel.groupby(['Plant Code','AER Fuel Code'],as_index = False).sum()
+                
                     for mo in range(month_s,month_f):
                         #Fuel_con = ' '.join(('Elec_MMBtu',MonthKey[mo])) #MMBTU
                         #Elec_gen = ' '.join(('Netgen',MonthKey[mo])) #MWh
-                        Fuel_con = 8+mo #9 = January Elec so 8+1(mo) = 9
-                        Elec_gen = 20+mo
+                        Fuel_con = 10+mo #9 = January Elec so 8+1(mo) = 9
+                        Elec_gen = 22+mo
                                                 
                         #finds index in Cost_df that matches fuel, plant and month
                         idx = tdf.loc[(tdf['Month'] == mo) & (tdf['Plant Code']==plant) & (tdf['Fuel Group']==fuel)].index.tolist()
@@ -166,7 +199,6 @@ def GenDataset():
             tdf['Fuel Exp $']=tdf['Cost']*tdf['Use MMBtu']/100 #Cents per MMBtu * MMBtu
             tdf['Elec Pric c/kWh'] = tdf['Fuel Exp $']/tdf['Elec Gen MWh']/10
             cost_df = cost_df.append(tdf)  
-        
         '''
         if OMFile:
             xls = pd.ExcelFile(OMFile)
@@ -177,22 +209,27 @@ def GenDataset():
     
     cost_df.to_csv('Cost Dataset.csv')
     master_df.to_csv('Condensed Dataset.csv')
+
     os.chdir('..')
     end = time.ctime()
-    print('End', end, ' Run time: ', end-start)
+    print('End', end)
 
 
-def Clean(df):
-
-    head_loc = np.where(df=='Plant Name')[0]
-    if head_loc:
-        head_loc = head_loc.item()
-        idx = 'Plant Name'
-    else:
-        head_loc = np.where(df=='PLANT NAME')[0]
-        head_loc= head_loc.item()
-        idx = 'PLANT NAME'
-        
+def Clean(df,keys):
+    
+    for key in keys:
+        head_loc = np.where(df==key)[0]
+        if len(head_loc)>0:
+            head_loc = head_loc.item()
+            break
+            #idx = 'Plant Name'
+        '''
+        else:
+            print('PLANT NAME')
+            head_loc = np.where(df=='PLANT NAME')[0]
+            head_loc= head_loc.item()
+            #idx = 'PLANT NAME'
+        '''
     df.columns = df.iloc[head_loc]
     todrop = np.arange(0,head_loc+1,1)
     df.drop(todrop,inplace=True)
@@ -241,7 +278,8 @@ def SecondClean(df):
     df = df[df['Efficiency']>eff_lower]
     df = df[df['Fuel Consumption MWh']>0]
     df = df[df['Net Generation MWh']>0]
-
+    
+    df['Zipcode'] = (df['Zipcode'].astype(str).str.zfill(5)).astype(str)
     return df
 
 #Generates dataframe for export that summarizes energy generated by fuel by state by year
@@ -320,6 +358,8 @@ def PortfolioGeneration():
     Fuel_gen.reset_index(inplace = True)
     SaveResultDF(Fuel_gen, 'Time Generation with Fuel')
     
+    
+    '''
     #removes all utilites with less than 30 plants
     utility_sample = 30
     top_Ut= master_df['Utility'].value_counts()
@@ -327,6 +367,7 @@ def PortfolioGeneration():
     utilities = master_df[master_df['Utility'].isin(top_Ut)]
     print('Looking at ', len(utilities), ' out of ', len(master_df), ' plants')
 
+    
     print('Utility','AER Fuel Code', 'Net Generation MWh')
     TimePortfolio(utilities,'Utility','AER Fuel Code', 'Net Generation MWh')
     
@@ -335,8 +376,7 @@ def PortfolioGeneration():
     
     print('Utility','Primary Mover', 'Net Generation MWh')
     TimePortfolio(utilities,'Utility','Primary Mover', 'Net Generation MWh')
-    
-
+    '''
     
     return
 
@@ -369,21 +409,29 @@ def MoverTrends(df,stat,min_pts=2):
 
 def LoadMaster():
     os.chdir(os.path.join('Sources'))
-    master_df = pd.read_csv('Condensed Dataset.csv')
+    master_df = pd.read_csv('Condensed Dataset.csv',index_col=0)
     os.chdir('..')
     return(master_df)
     
 def LoadCost():
     os.chdir(os.path.join('Sources'))
-    master_df = pd.read_csv('Cost Dataset.csv')
+    master_df = pd.read_csv('Cost Dataset.csv',index_col=0)
     os.chdir('..')
     return(master_df)
+
 def SaveResultDF(df,file):
     os.chdir(os.path.join('Results'))
     df.to_csv('.'.join((file,'csv')),index=False)
     os.chdir('..')
     return
 
+def YearlyDataSet():
+    master_df = LoadMaster()
+    years = master_df['Year'].unique()
+    
+    for year in years:
+        year_df = master_df[master_df['Year']== year]
+        SaveResultDF(year_df, ('_'.join((str(year),'sub_master'))))
 
 '''Master Headers               Cost Headers
         'Year'                  'Plant Code'
@@ -395,81 +443,20 @@ def SaveResultDF(df,file):
         'Fuel Consumption MWh'  'Year'
         'Net Generation MWh'    'Month'
         'Efficiency'
+        'Zipcode'
+        'County'
 '''
 
 #GenDataset()
 
 master_df = LoadMaster()
+
+master_df = SecondClean(master_df)
+print(master_df['Zipcode'])
 #cost_df = LoadCost()
-
-PortfolioGeneration()
-
-'''
-fuels = ['Coal','Natural Gas','Petroleum']
-for fuel in fuels:
-    fuel_df = cost_df['Elec Pric c/kWh'][(cost_df['Fuel Group']==fuel)&(cost_df['Year']==2015)]
-    fuel_df.dropna(inplace=True)
-    fuel_df = fuel_df[(fuel_df>=0)&(fuel_df<=100)]
-    plt.hist(fuel_df, bins = int(m.sqrt(len(fuel_df))), alpha = 0.5,label = fuel)
-
-plt.ylabel('Counts')
-plt.xlabel('Electricity Cost cents/kWh')
-plt.title('2015')
-plt.legend()
-plt.savefig('2015 fuel comparison', dpi = 300)
-plt.close()
-
-for year in cost_df['Year'].unique().tolist():
-    fuel_df = cost_df['Elec Pric c/kWh'][(cost_df['Year']==year)&(cost_df['Fuel Group']=='Coal')]
-    fuel_df.dropna(inplace=True)
-    fuel_df = fuel_df[(fuel_df>=0)&(fuel_df<=100)]
-    plt.hist(fuel_df, bins = int(m.sqrt(len(fuel_df))), alpha = 0.5,label = str(year))
-
-plt.ylabel('Counts')
-plt.xlabel('Electricity Cost cents/kWh')
-plt.title('Coal')
-plt.legend()
-plt.savefig('Coal over time', dpi = 300)
-plt.close()
-
-for year in cost_df['Year'].unique().tolist():
-    fuel_df = cost_df['Elec Pric c/kWh'][(cost_df['Year']==year)&(cost_df['Fuel Group']=='Natural Gas')]
-    fuel_df.dropna(inplace=True)
-    fuel_df = fuel_df[(fuel_df>=0)&(fuel_df<=100)]
-    plt.hist(fuel_df, bins = int(m.sqrt(len(fuel_df))), alpha = 0.5,label = str(year))
-
-plt.ylabel('Counts')
-plt.xlabel('Electricity Cost cents/kWh')
-plt.title('Natural Gas')
-plt.legend()
-plt.savefig('Natural Gas over time', dpi = 300)
-plt.close()
-
-for year in cost_df['Year'].unique().tolist():
-    fuel_df = cost_df['Elec Pric c/kWh'][(cost_df['Year']==year)&(cost_df['Fuel Group']=='Petroleum')]
-    fuel_df.dropna(inplace=True)
-    fuel_df = fuel_df[(fuel_df>=0)&(fuel_df<=100)]
-    plt.hist(fuel_df, bins = int(m.sqrt(len(fuel_df))), alpha = 0.5,
-             label = str(year))
-
-plt.ylabel('Counts')
-plt.xlabel('Electricity Cost cents/kWh')
-plt.title('Petroleum Fuel')
-plt.legend()
-plt.savefig('Petroleum over time', dpi = 300)
-plt.close()
+#YearlyDataSet()
 
 
-#print(len(master_df['Plant Code'].unique()))
-#master_df = SecondClean(master_df)
-#MetaAnalysis(master_df)
-'''
 
-'''
-Utility_df = master_df[['Year','Utility','Net Generation MWh']]
-Utility_df = Utility_df.groupby(['Utility','Year'],axis=0, as_index = False).sum()
-top_UT = Utility_df.sort_values(['Year','Net Generation MWh','Utility'],ascending=False)[:20]
-'''
+#print(master_df.groupby(['Zipcode'])['Net Generation MWh'].sum())
 
-
-#PortfolioGeneration()
