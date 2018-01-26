@@ -452,7 +452,6 @@ def YearlyDataSet():
 master_df = LoadMaster()
 
 master_df = SecondClean(master_df)
-print(master_df['Zipcode'])
 #cost_df = LoadCost()
 #YearlyDataSet()
 
