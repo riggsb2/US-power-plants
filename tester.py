@@ -1,18 +1,34 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Created on Mon Jan  8 14:38:12 2018
+Created on Sat Jan 27 10:53:01 2018
 
 @author: riggs
 """
 
 import pandas as pd
+import numpy as np
 
 
-df = pd.DataFrame([[1,2],[3,4],[4,5],[6,8],[9,10]],columns = ['First','Second'])
-print(df)
-include = [1,2,3,4,5]
+lat_rng = [19.50139, 64,85694]
+long_rng = [-161.75583, -68.01197]
 
-df = df[df['First'].isin(include)]
+df = pd.DataFrame(dtype = str)
 
-print(df)
+df['lat'] = pd.Series(np.random.uniform(lat_rng[0],lat_rng[1],100), dtype = object)
+df['long'] = np.random.uniform(long_rng[0],long_rng[1],100)
+
+print(df['lat'].dtype)
+
+df.set_value(3,'lat', 'word')
+df.set_value(4,'lat', 'a phrase')
+
+print(df.head())
+
+df['lat'].replace(regex=True,inplace=True,to_replace=r'[a-zA-Z]+',value=np.nan)
+
+print(df.head())
+
+df1 = pd.DataFrame([[1, np.nan]])
+df2 = pd.DataFrame([[3, 4]])
+print(df1.combine_first(df2))
