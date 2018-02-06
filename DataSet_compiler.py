@@ -515,21 +515,8 @@ def YearlyDataSet(df):
         'Sector'
 '''
 
+'PLNTCODE,N,5,0','PLNTCODE',
+'PLANT_CODE','Plant Code'
 #GenDataset()
 #PopulationSet()
-
-#master = LoadSource('Condensed Dataset')
-#master = SecondClean(master)
-
-#Pop = LoadSource('Population Set').head())
-eng = LoadSource('Engineered Features')
-eng = SecondClean(eng)
-
-
-'''
-
-Eng = LoadSource('Engineered Features')
-plt.scatter(Eng['Longitude'],Eng['Latitude'])
-plt.show()
-'''
 
