@@ -224,11 +224,17 @@ for year in years:
     temp_df = temp_df[temp_df.index!='State-Fuel Level Increment']
     master_df = master_df.append(temp_df)
 
-if not os.path.isdir(os.path.join('Slimmed Results')):
-    os.makedirs(os.path.join('Slimmed Results'))
-os.chdir(os.path.join('Slimmed Results'))
+os.chdir(os.path.join('Sources'))
+master_df.to_csv('.csv',delimiter = ',')
+os.chdir('..')
+
+if not os.path.isdir(os.path.join('Results')):
+    os.makedirs(os.path.join('Results'))
+os.chdir(os.path.join('Results'))
+
 
 print(master_df.head())
+'''
 Efftrends = MoverTrends(master_df,'Efficiency',5)
 Efftrends.to_csv('Efficiency Trend df.csv',delimiter = ',')
 TrendBoxplot(Efftrends,'Efficiency',0.7,-0.25,0.25)
@@ -236,4 +242,4 @@ TrendBoxplot(Efftrends,'Efficiency',0.7,-0.25,0.25)
 EnergyPort = StatePortfolio(master_df)
 EnergyPort.to_csv('State distribution df.csv',delimiter = ',')
 PortfolioPlot(EnergyPort)
-
+'''
