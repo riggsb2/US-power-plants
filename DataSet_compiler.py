@@ -28,7 +28,9 @@ def GenDataset():
     FuelNames = ['AER Fuel Type Code']
     ElecFuelNames = ['Elec Fuel Consumption MMBtu','ELEC FUEL CONSUMPTION MMBTUS']
     GenNames = ['Net Generation (Megawatthours)','NET GENERATION (megawatthours)']
-    
+    CensusNames = ['Census Region']
+    NERCNames = ['NERC Region']
+
     #From 860 Reports
     Plant_Codes = ['PLNTCODE,N,5,0','PLNTCODE','PLANT_CODE','Plant Code']
     County = ['CNTYNAME,C,20','CNTYNAME','COUNTY','County']
@@ -101,11 +103,16 @@ def GenDataset():
         FuelCol = list(set(FuelNames) & set(header))
         ElecFuelCol = list(set(ElecFuelNames) & set(header))
         GenCol = list(set(GenNames) & set(header))
+        NERCCol = list(set(NERCNames) & set(header))
+        CensusCol = list(set(CensusNames) & set(header))
+
         
         temp_df['Year'] = df[YearCol.pop()]
         temp_df['Utility'] = df[UtilityCol[0]]
         temp_df['Plant State'] = df[StateCol[0]]
         temp_df['Plant Code'] = df[PlCodeCol[0]].astype(int)
+        temp_df['NERC Region'] = df[NERCCol[0]]
+        temp_df['Census Region'] = df[CensusCol[0]]
         temp_df['Primary Mover'] = df[MoverCol[0]]
         temp_df['AER Fuel Code'] = df[FuelCol[0]]
         temp_df['Fuel Consumption MWh'] = df[ElecFuelCol[0]]*MMBTU_MWH
@@ -134,7 +141,8 @@ def GenDataset():
         
         #temp_df = temp_df[temp_df.index!='State-Fuel Level Increment']
         master_df = master_df.append(temp_df)        
-
+        
+        '''
         #checks to see if receipts exists
         if len(sheets)>3:
            
@@ -192,8 +200,8 @@ def GenDataset():
                     for mo in range(month_s,month_f):
                         #Fuel_con = ' '.join(('Elec_MMBtu',MonthKey[mo])) #MMBTU
                         #Elec_gen = ' '.join(('Netgen',MonthKey[mo])) #MWh
-                        Fuel_con = 10+mo #9 = January Elec so 8+1(mo) = 9
-                        Elec_gen = 22+mo
+                        Fuel_con = 12+mo #9 = January Elec so 8+1(mo) = 9
+                        Elec_gen = 24+mo
                                                 
                         #finds index in Cost_df that matches fuel, plant and month
                         idx = tdf.loc[(tdf['Month'] == mo) & (tdf['Plant Code']==plant) & (tdf['Fuel Group']==fuel)].index.tolist()
@@ -206,6 +214,7 @@ def GenDataset():
             tdf['Fuel Exp $']=tdf['Cost']*tdf['Use MMBtu']/100 #Cents per MMBtu * MMBtu
             tdf['Elec Pric c/kWh'] = tdf['Fuel Exp $']/tdf['Elec Gen MWh']/10
             cost_df = cost_df.append(tdf)  
+        '''
         '''
         if OMFile:
             xls = pd.ExcelFile(OMFile)
@@ -253,6 +262,8 @@ def Clean(df,keys):
 def PopulationSet():
     print('Assembling Condensed Population Set')
     
+
+    
     file_df = pd.read_csv('Files to Read.csv',header=0)
     file_df.sort_values(by='Year', inplace=True, ascending=False)
     file_df = file_df[file_df['Type']=='POP']
@@ -260,7 +271,10 @@ def PopulationSet():
     POP_df = pd.DataFrame()
     
     os.chdir(os.path.join('Sources'))
-
+    
+    ll_file = '2015_Gaz_counties_national.txt'
+    ll_df = pd.read_table(ll_file,encoding = 'latin1')
+    
     for year in years:
         tdf = pd.DataFrame()
         files = file_df.loc[file_df['Year'] == year]
@@ -270,7 +284,11 @@ def PopulationSet():
         tdf['County'],tdf['Plant State'] = tdf['Geography'].str.split(', ').str
         tdf['Year']=year
         
-        POP_df = POP_df.append(tdf[['Year','County','Plant State','Estimate; Total']])
+        POP_df = POP_df.append(tdf[['Year','Id','Id2','County','Plant State','Estimate; Total']])
+        
+    POP_df = POP_df.merge(ll_df, left_on=['Id2'],right_on='GEOID', how='left')
+    POP_df.to_csv('Population Set.csv')
+    os.chdir('..')
 
 def MetaAnalysis(df):
     #cols = df.columns
@@ -322,7 +340,6 @@ def FeatureEng(df):
             long_mi = km_mile*(m.pi*6378137.0*m.cos(rad_lat)/(180*(1-0.00669437999014*m.sin(rad_lat)**2)**0.5))/1000
             return(lat_mi,long_mi)
             
-    
         def FindNeighbors(x):    
             clat = x['Latitude']
             clong = x['Longitude']
@@ -332,6 +349,9 @@ def FeatureEng(df):
                          (tdf['Longitude']<=clong+dlong) & (tdf['Longitude']>=clong-dlong)]
             return neighbors.sum(),len(neighbors)
     
+        #def PopDensity(x):
+            
+
         tdf[['dlat','dlong']] = dist/tdf['Latitude'].apply(GeoMile).apply(pd.Series)
         years = df['Year'].unique()
         
@@ -340,7 +360,8 @@ def FeatureEng(df):
             power_df=power_df.append(tdf[tdf['Year']==year].apply(FindNeighbors,axis=1).apply(pd.Series))
         power_df.columns =['{0:.0f} power'.format(dist),'{0:.0f} neighbors'.format(dist)]
         power_df[['Year','Plant Code']] = tdf[['Year','Plant Code']]
-
+        
+        
         
         return(power_df)
             
@@ -352,133 +373,9 @@ def FeatureEng(df):
         
     return df
         
-#Generates dataframe for export that summarizes energy generated by fuel by state by year
-def TimePortfolio(df,indexby, ofinterest, sortby):    
-    #New dataframe with minimum columns
-    portfolio = pd.DataFrame(columns = ['Year','Plant State'])
-    
-    #Iterate through all of the years available
-    years = df['Year'].unique()    
-    for year in years:
-        year_df = df[df['Year']==year]
-        
-        if indexby == 'Plant State':
-            #Entire US per year        
-            US_net = year_df[sortby].sum()
-            tdf = pd.DataFrame(columns = ['Year','Plant State',ofinterest,sortby])
-            tdf.Year = pd.Series(year)
-            tdf['Plant State'] = pd.Series('Entire US')
-            
-            #Iterate through fuel type
-            fuel_types = year_df[ofinterest].unique()
-            for fuel in fuel_types:
-                if pd.isnull(fuel)==False:
-                    net_gen = year_df.loc[year_df[ofinterest] == fuel, sortby].sum()
-                    frac = net_gen/US_net
-                    tdf[ofinterest] = fuel
-                    tdf[sortby] = frac
-                    portfolio = portfolio.append(tdf,ignore_index=True)        
-        
-        #Iterate over each state in YEAR
-        indexed = df[indexby].unique()
-        for index in indexed:
-            idx_df = year_df[year_df[indexby]==index]
-            tdf = pd.DataFrame(columns = ['Year',indexby])
-
-            tdf.Year = pd.Series(year)
-            tdf[indexby] = pd.Series(index)
-            index_net = idx_df[sortby].sum()
-            if index_net !=0:            
-                fuel_types = df[ofinterest].unique()
-                for fuel in fuel_types:
-                    if pd.isnull(fuel)==False:
-                        net_gen = idx_df.loc[idx_df[ofinterest] == fuel, sortby].sum()
-                        frac = net_gen/index_net
-                        tdf[ofinterest] = fuel
-                        tdf[sortby] = frac
-            
-                        portfolio = portfolio.append(tdf,ignore_index=True)
-        
-    #Reorders columns to be user friendly
-    col = list(portfolio.columns.values)
-    PS = col.index(indexby)
-    col.insert(0, col.pop(PS))
-    y = col.index('Year')
-    col.insert(0, col.pop(y))
-    portfolio = portfolio[col]
-    
-    SaveResultDF(portfolio,'_'.join((indexby,ofinterest,sortby)))
-
-    return(portfolio)
-
-def PortfolioGeneration():
-    
-    print('Plant State','AER Fuel Code','Net Generation MWh')
-    TimePortfolio(master_df,'Plant State','AER Fuel Code','Net Generation MWh')
-    
-    print('Plant State','AER Fuel Code','Fuel Consumption MWh')
-    TimePortfolio(master_df,'Plant State','AER Fuel Code','Fuel Consumption MWh')
-
-    print('US Over Time with Fuel Use')
-    Fuel_gen = master_df.groupby(['Year', 'AER Fuel Code']).agg({'Net Generation MWh': 'sum'})
-    Fuel_gen = Fuel_gen[Fuel_gen['Net Generation MWh']>0]    
-    threshold = 0.05
-    Fuel_gen['Frac'] = Fuel_gen.groupby(['Year']).apply(lambda x: x / float(x.sum()))
-    Fuel_gen = Fuel_gen[Fuel_gen['Frac']>threshold]
-    Fuel_gen.reset_index(inplace = True)
-    SaveResultDF(Fuel_gen, 'Time Generation with Fuel')
-    
-    
-    '''
-    #removes all utilites with less than 30 plants
-    utility_sample = 30
-    top_Ut= master_df['Utility'].value_counts()
-    top_Ut = list(top_Ut[top_Ut>utility_sample].index)
-    utilities = master_df[master_df['Utility'].isin(top_Ut)]
-    print('Looking at ', len(utilities), ' out of ', len(master_df), ' plants')
-    
-    print('Utility','AER Fuel Code', 'Net Generation MWh')
-    TimePortfolio(utilities,'Utility','AER Fuel Code', 'Net Generation MWh')
-    
-    print('Utility','AER Fuel Code', 'Fuel Consumption MWh')
-    TimePortfolio(utilities,'Utility','AER Fuel Code', 'Fuel Consumption MWh')
-    
-    print('Utility','Primary Mover', 'Net Generation MWh')
-    TimePortfolio(utilities,'Utility','Primary Mover', 'Net Generation MWh')
-    '''
-    
-    return
-
-
-def MoverTrends(df,stat,min_pts=2):
-    cols = ['Plant Name','Plant State','Primary Mover','AER Fuel Code','m','b','Rsq','Std Error']
-    trend_df = pd.DataFrame()
-    states = df['Plant State'].unique()
-    for state in states:
-        state_df = df[df['Plant State']==state]
-        movers = state_df['Primary Mover'].unique()
-        for mover in movers:
-            move_df = state_df[state_df['Primary Mover']==mover]
-            fuels = move_df['AER Fuel Code'].unique()
-            for fuel in fuels:            
-                plants = move_df.index.unique()
-                for plant in plants:
-                    plant_df = move_df[move_df.index==plant]
-                    x = plant_df['Year'].values
-                    y = plant_df[stat].values
-                    mask = ~pd.isnull(x) & ~pd.isnull(y)
-                    x = x[mask]
-                    y = y[mask]
-                    if len(plant_df['Year'].unique())>=min_pts and len(plant_df[stat].unique())>=min_pts:
-                        m, b, r_value, p_value, std_err = stats.linregress(x,y)
-                        tdf = pd.DataFrame([[plant,state,mover,fuel,m,b,r_value**2,std_err]],columns = cols)
-                        trend_df=trend_df.append(tdf,ignore_index=True)
-    return(trend_df)
-
-
 def LoadSource(filename):
     os.chdir(os.path.join('Sources'))
-    df = pd.read_csv('.'.join((filename,'csv')),index_col=0)
+    df = pd.read_csv('.'.join((filename,'csv')))
     os.chdir('..')
     return(df)
       
@@ -515,8 +412,8 @@ def YearlyDataSet(df):
         'Sector'
 '''
 
-'PLNTCODE,N,5,0','PLNTCODE',
-'PLANT_CODE','Plant Code'
 #GenDataset()
+#print(SecondClean(LoadSource('Condensed Dataset')))
 #PopulationSet()
+#print(LoadSource('Population Set'))
 
