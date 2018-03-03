@@ -8,27 +8,42 @@ Created on Sat Jan 27 10:53:01 2018
 
 import pandas as pd
 import numpy as np
+import os
 
+def Clean(df,keys):
+    
+    for key in keys:
+        head_loc = np.where(df==key)[0]
+        if len(head_loc)>0:
+            head_loc = head_loc.item()
+            break
 
-lat_rng = [19.50139, 64,85694]
-long_rng = [-161.75583, -68.01197]
+    df.columns = df.iloc[head_loc]
+    todrop = np.arange(0,head_loc+1,1)
+    df.drop(todrop,inplace=True)
+    
+    df.columns = df.columns.str.replace('\n',' ')
+    df.columns = df.columns.str.replace('  ',' ')
+    mask = df.isin(['.'])   
+    df = df.where(~mask, other=0)
+    mask = df.isin([0])   
+    df = df.where(~mask, other=np.nan)
+    return(df)
 
-df = pd.DataFrame(dtype = str)
+IDNames = ['Plant Id', 'Plant Code','Plant ID']
+Fuel_Trans = {'Natural Gas': 'NG', 'Coal': 'COL', 'Petroleum':'DFO',
+              'Petroleum Coke': 'PC','Other Gas': 'OOG'}
 
-df['lat'] = pd.Series(np.random.uniform(lat_rng[0],lat_rng[1],100), dtype = object)
-df['long'] = np.random.uniform(long_rng[0],long_rng[1],100)
+Fuel_Trans = {'Natural Gas': 'NG', 'Coal': 'COL', 'Petroleum':'DFO',
+              'Petroleum Coke': 'PC','Other Gas': 'OOG'}
 
-print(df['lat'].dtype)
+os.chdir(os.path.join('Sources/In Use'))
 
-df.set_value(3,'lat', 'word')
-df.set_value(4,'lat', 'a phrase')
-
-print(df.head())
-
-df['lat'].replace(regex=True,inplace=True,to_replace=r'[a-zA-Z]+',value=np.nan)
-
-print(df.head())
-
-df1 = pd.DataFrame([[1, np.nan]])
-df2 = pd.DataFrame([[3, 4]])
-print(df1.combine_first(df2))
+GFDFile = 'EIA923_Schedules_2_3_4_5_2009_Final_Revision.XLS'
+xls = pd.ExcelFile(GFDFile)
+sheets = xls.sheet_names
+#sheets = [x.lower() for x in sheets]
+for i in sheets:
+    if 'Receipts' in i:
+        df = Clean(xls.parse(i), IDNames)
+        break
