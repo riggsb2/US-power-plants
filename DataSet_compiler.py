@@ -56,7 +56,8 @@ def GenDataset():
     years = np.arange(min(file_df['Year']),max(file_df['Year']+1),1)
     
     master_df = pd.DataFrame()
-    
+    loc_df = pd.DataFrame()
+
     os.chdir(os.path.join('Sources/In Use'))
     for year in years:
         start = time.ctime()
@@ -120,7 +121,8 @@ def GenDataset():
         CountyCol = list(set(County) & set(header))
         ZipCol = list(set(Zipcode) & set(header))
         PlCodeCol = list(set(Plant_Codes) & set(header))
-
+        LatCol = list(set(Lat) & set(header))
+        LongCol = list(set(Long) & set(header))
         
         temp_info = pd.DataFrame()
         temp_info['County'] = INFO_df[CountyCol[0]].astype(str)
@@ -128,7 +130,15 @@ def GenDataset():
         temp_info['Plant_Code'] = INFO_df[PlCodeCol[0]].astype(int)
         
         temp_df = pd.merge(temp_df, temp_info, on='Plant_Code', how='outer')
-            
+
+        if LatCol:
+            t_loc_df = pd.DataFrame()
+            t_loc_df['Plant_Code'] = INFO_df[PlCodeCol[0]].astype(int)
+            t_loc_df['Latitude'] = INFO_df[LatCol[0]]
+            t_loc_df['Longitude'] = INFO_df[LongCol[0]]
+            loc_df = loc_df.append(t_loc_df)        
+
+        
         for i in sheets:
             if 'Receipts' in i:
                
@@ -153,14 +163,16 @@ def GenDataset():
                 break
         
         master_df = master_df.append(temp_df)        
-   
+        
         '''
         if OMFile:
             xls = pd.ExcelFile(OMFile)
             sheets = xls.sheet_names
             print(sheets)
         '''
-    
+    loc_df.drop_duplicates(inplace = True)
+    master_df = pd.merge(master_df, loc_df, on='Plant_Code', how='outer')
+
     os.chdir('..')
     master_df.to_csv('Compiled Dataset.csv', index=False)
 
@@ -212,6 +224,8 @@ def Clean(df,keys):
     
     mask = df.isin(['.'])   
     df = df.where(~mask, other=np.nan)
+    mask = df.isin([' '])   
+    df = df.where(~mask, other=np.nan)
     #mask = df.isin([0])   
     #df = df.where(~mask, other=np.nan)
     return(df)
@@ -225,11 +239,11 @@ def PopulationSet():
     years = np.arange(min(file_df['Year']),max(file_df['Year']+1),1)
     POP_df = pd.DataFrame()
     
-    os.chdir(os.path.join('Sources\In Use'))
+    os.chdir(os.path.join('Sources/In Use'))
     
     ll_file = '2015_Gaz_counties_national.txt'
     ll_df = pd.read_table(ll_file,encoding = 'latin1')
-    
+
     for year in years:
         tdf = pd.DataFrame()
         files = file_df.loc[file_df['Year'] == year]
@@ -242,7 +256,9 @@ def PopulationSet():
         POP_df = POP_df.append(tdf[['Year','Id','Id2','County','Plant State','Estimate; Total']])
         
     POP_df = POP_df.merge(ll_df, left_on=['Id2'],right_on='GEOID', how='left')
-    POP_df.to_csv('Population Set.csv')
+    POP_df.rename(columns={POP_df.columns.values[-1]:'INTPTLONG'},inplace=True)
+    os.chdir('..')
+    POP_df.to_csv('Population Set.csv', index = False)
     os.chdir('..')
 
 def MetaAnalysis(df):
@@ -266,10 +282,14 @@ def MetaAnalysis(df):
     
 def FeatureEng(df):
 
-    def Neighbors(dist):
+    def Neighbors(dists):
+        print('Calculating Neighbor Stats', time.ctime())
         def GeoMile(lat):
-            km_mile = 0.621   
-            rad_lat = m.radians(lat)
+            km_mile = 0.621
+            try:
+                rad_lat = m.radians(float(lat))
+            except:
+                print('THIS ONE BROKE:',lat)
             lat_mi = km_mile*(111132.954-559.822*m.cos(2*rad_lat) +1.175*m.cos(4*rad_lat))/1000
             long_mi = km_mile*(m.pi*6378137.0*m.cos(rad_lat)/(180*(1-0.00669437999014*m.sin(rad_lat)**2)**0.5))/1000
             return(lat_mi,long_mi)
@@ -277,35 +297,52 @@ def FeatureEng(df):
         def FindNeighbors(x):    
             clat = x['Latitude']
             clong = x['Longitude']
-            dlat = x['dlat']
-            dlong = x['dlong']
-            neighbors = tdf['Net Generation MWh'][(tdf['Latitude']<=clat+dlat) & (tdf['Latitude']>=clat-dlat) &
-                         (tdf['Longitude']<=clong+dlong) & (tdf['Longitude']>=clong-dlong)]
-            return neighbors.sum(),len(neighbors)
-    
-        #def PopDensity(x):
-            
-
-        tdf[['dlat','dlong']] = dist/tdf['Latitude'].apply(GeoMile).apply(pd.Series)
-        years = df['Year'].unique()
+            #dlat = x['dlat']
+            #dlong = x['dlong']
+            results = []
+            for dist in dists:
+                GM = GeoMile(clat)
+                dlat,dlong = dist/GM[0],dist/GM[1]
+                neighbors = tdf['Net_Generation_MWh'][(tdf['Latitude']<=clat+dlat) & (tdf['Latitude']>=clat-dlat) &
+                             (tdf['Longitude']<=clong+dlong) & (tdf['Longitude']>=clong-dlong)]
+                population = py_df['Estimate; Total'][(py_df['INTPTLAT']<=clat+dlat) & (py_df['INTPTLAT']>=clat-dlat) &
+                             (py_df['INTPTLONG']<=clong+dlong) & (py_df['INTPTLONG']>=clong-dlong)]
+                results.extend([neighbors.sum(),len(neighbors), population.sum(),len(population)])
+            return results
+                
         
+        #tdf[['dlat','dlong']] = dist/tdf['Latitude'].apply(GeoMile).apply(pd.Series)
+        years = df['Year'].unique()
         power_df = pd.DataFrame()
         for year in years:
-            power_df=power_df.append(tdf[tdf['Year']==year].apply(FindNeighbors,axis=1).apply(pd.Series))
-        power_df.columns =['{0:.0f} power'.format(dist),'{0:.0f} neighbors'.format(dist)]
-        power_df[['Year','Plant Code']] = tdf[['Year','Plant Code']]
+            print('Year: ',year, " start time ", time.ctime())
+            py_df = pop_df[pop_df['Year']==year]
+            power_df=power_df.append(tdf[tdf['Year']==year].apply(FindNeighbors,axis=1).apply(pd.Series)) 
+        power_df.dropna(axis = 1, how = 'all', inplace = True) #for some reason power_df has Year, Utility, etc. all Nan so they need to be dropped
         
+        col = []
+        for dist in dists:
+            col.extend(['{0:.0f} power'.format(dist),'{0:.0f} neighbors'.format(dist),
+                        '{0:.0f} pop'.format(dist),'{0:.0f} counties'.format(dist)])
+        power_df.columns = col
+        power_df[['Year','Plant_Code']] = tdf[['Year','Plant_Code']]
         
-        
-        return(power_df)
-            
-    tdf = df.groupby(['Year','Plant Code','Latitude','Longitude'],as_index=False).sum()
+        print('Neighbors Compiled: Resulting DF.head()')
 
-    for n in [5,10,25,50,100,150,200]:
-        df = pd.merge(df, Neighbors(n), on=['Plant Code','Year'], how='left')
-        break
+        print(power_df.head())
+
+        return(power_df)
         
-    return df
+    tdf = df.groupby(['Year','Plant_Code','Latitude','Longitude'],as_index=False).sum()
+    pop_df = LoadSource('Population Set').groupby(['Year','INTPTLAT','INTPTLONG'],as_index=False).sum()
+    
+    dists = [5,10,25,50,100,150,200,300]
+    df = pd.merge(df, Neighbors(dists), on=['Plant_Code','Year'], how='left')
+    
+    os.chdir(os.path.join('Sources'))
+    df.to_csv('Engineered Features.csv', index=False)
+    os.chdir('..')
+    return()
         
 def LoadSource(filename):
     os.chdir(os.path.join('Sources'))
@@ -347,12 +384,10 @@ def YearlyDataSet(df):
 '''
 
 #GenDataset()
-df = LoadSource('Compiled Dataset')
-
-a = len(df)
-for i in df.columns.values:
-    print(i,df[i].isnull().sum()/a)
-    
 #PopulationSet()
-#print(LoadSource('Population Set'))
-
+#print(LoadSource('Population Set').head())
+#df = LoadSource('Compiled Dataset')
+#FeatureEng(df)
+df = LoadSource('Engineered Features')
+for col in df.columns.values:
+    print(col, df[col].isnull().sum()/len(df[col]))
