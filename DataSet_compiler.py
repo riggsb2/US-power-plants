@@ -93,7 +93,8 @@ def GenDataset():
         GenCol = list(set(GenNames) & set(header))
         NERCCol = list(set(NERCNames) & set(header))
         CensusCol = list(set(CensusNames) & set(header))
-
+        SectorCol = list(set(Sector) & set(header))
+        
         temp_df['Year'] = df[YearCol.pop()]
         temp_df['Utility'] = df[UtilityCol[0]]
         temp_df['Plant_State'] = df[StateCol[0]]
@@ -104,6 +105,7 @@ def GenDataset():
         temp_df['AER_Fuel_Code'] = df[FuelCol[0]]
         temp_df['Fuel_Consumption_MWh'] = df[ElecFuelCol[0]]*MMBTU_MWH
         temp_df['Net_Generation_MWh'] = df[GenCol[0]]
+        temp_df['Sector'] = df[SectorCol[0]]
         #temp_df['Efficiency'] = (df[GenCol[0]]/(df[ElecFuelCol[0]]*MMBTU_MWH))
 
         idx_s = header.index('Elec_MMBtu_1')
@@ -334,13 +336,16 @@ def FeatureEng(df):
         return(power_df)
         
     tdf = df.groupby(['Year','Plant_Code','Latitude','Longitude'],as_index=False).sum()
-    pop_df = LoadSource('Population Set').groupby(['Year','INTPTLAT','INTPTLONG'],as_index=False).sum()
+    pop_df = LoadSource('Population_Set').groupby(['Year','INTPTLAT','INTPTLONG'],as_index=False).sum()
     
     dists = [5,10,25,50,100,150,200,300]
     df = pd.merge(df, Neighbors(dists), on=['Plant_Code','Year'], how='left')
     
+    df = df[pd.notna(df['Year'])] #removes entires that don't have a plant
+    df.drop_duplicates(inplace=True) #removes duplicates
+    
     os.chdir(os.path.join('Sources'))
-    df.to_csv('Engineered Features.csv', index=False)
+    df.to_csv('Engineered_Features.csv', index=False)
     os.chdir('..')
     return()
         
@@ -388,6 +393,6 @@ def YearlyDataSet(df):
 #print(LoadSource('Population Set').head())
 #df = LoadSource('Compiled Dataset')
 #FeatureEng(df)
-df = LoadSource('Engineered Features')
+df = LoadSource('Engineered_Features')
 for col in df.columns.values:
     print(col, df[col].isnull().sum()/len(df[col]))
