@@ -10,14 +10,12 @@ Created on Mon Feb  5 15:27:38 2018
 import pandas as pd
 import matplotlib.pyplot as plt
 import os
-from sklearn import preprocessing
-from sklearn import base
-from sklearn.neighbors import KNeighborsClassifier
-from sklearn import utils,linear_model
-from sklearn import model_selection
-from sklearn.feature_extraction.text import CountVectorizer,HashingVectorizer
+from collections import defaultdict
+from sklearn import utils,linear_model, base, preprocessing
+from sklearn.svm import SVR, LinearSVR
+from sklearn.ensemble import RandomForestRegressor
+from sklearn.model_selection import ShuffleSplit
 import numpy as np
-from sklearn.naive_bayes import MultinomialNB, GaussianNB
 from sklearn.cluster import KMeans
 
 def LoadSource(filename):
@@ -27,120 +25,99 @@ def LoadSource(filename):
     return(df)
     
 def SecondClean(df):
-    eff_upper = 1
-    eff_lower = 0
-    trouble_df = df[df['Efficiency']>eff_upper]
-    trouble_df.append(df[df['Efficiency']<eff_lower])
+
     df.dropna(axis=0, how = 'any',inplace =True)
     
-    print(len(trouble_df), ' entries have been removed')
-    
-    df = df[df['Efficiency']<eff_upper]
-    df = df[df['Efficiency']>eff_lower]
     df = df[df['Fuel Consumption MWh']>0]
     df = df[df['Net Generation MWh']>0]
     
     df['Zipcode'] = (df['Zipcode'].astype(str).str.zfill(5)).astype(str)
     return df
 
-eng = LoadSource('Engineered Features')
-eng = SecondClean(eng)
-
-
-setup = eng.copy(deep=True)
-setup.drop(labels=['Plant Code','Zipcode'], axis=1, inplace=True)
-
-
-to_norm =['Fuel Consumption MWh', 'Net Generation MWh', '5 power', '5 neighbors',
-       '10 power', '10 neighbors', '25 power', '25 neighbors', '50 power',
-       '50 neighbors', '100 power', '100 neighbors', '150 power',
-       '150 neighbors', '200 power', '200 neighbors']
-
-for column in to_norm:
-    x = eng[[column]].values.astype(float)
-    min_max_scaler = preprocessing.MinMaxScaler()
-    x_scaled = min_max_scaler.fit_transform(x)
-    x_scaled = [float(x) for x in x_scaled]
-    setup[column] = pd.Series(x_scaled)
-
-print(setup.columns)
-correlation = setup.corr()
-
-
-#Trying to do modeling of Lat Long for fuel
-def LatLongModel():
-    Fuel_label =  eng['AER Fuel Code']
-    Lat_long_data = eng[['Latitude','Longitude']]
-    
-    code = 1
-    for fuel in Fuel_label.unique():
-        Fuel_label.replace(fuel,code,inplace = True)
-        code+=1
-    
-    knn = KNeighborsClassifier()
-    
-    #knn.fit(shuf_data, shuf_label)
-    
-    cv = model_selection.StratifiedKFold(n_splits=5,shuffle=True)
-    
-    gs = model_selection.GridSearchCV(
-        knn,
-        {"n_neighbors": range(10,20)},
-        cv=cv,
-        n_jobs=4,
-        scoring='neg_mean_squared_error'
-        )
-    
-    gs.fit(Lat_long_data, Fuel_label)
-    
-    print(gs.best_params_)
-    
-    new_fuels = gs.predict(Lat_long_data)
-    
-    print(new_fuels)
-    
-    plt.scatter(Fuel_label,new_fuels)
-    plt.show()
-    
-def StateCapacityModel():
-    Gen_label = setup['Net Generation MWh']
-    train_data = setup.copy(deep=True)
-    train_data.drop(labels = ['Efficiency','Fuel Consumption MWh','Primary Mover',
-                              'AER Fuel Code',
-                              'County','Latitude','Longitude'], axis=1,
-                                inplace=True)
+def CheckDensity(df):
+    density = defaultdict()
+    for col in df.columns.values:
+        density[col] = 1-df[col].isnull().sum()/len(df[col])
+    Dense = pd.DataFrame.from_dict(density, orient  ='index')
+    issues = Dense[Dense[0]<0.9]
+    print(issues)
         
-    state_data = CountVectorizer().fit_transform(train_data['Plant State'])
-    
-    linreg = linear_model.Ridge()  
-    linreg.fit(state_data, Gen_label)
-    
-    
-    pred = sorted(train_data['Plant State'].unique())
-    pred_std = setup.groupby(['Plant State'])['Net Generation MWh'].mean()
+eng = LoadSource('Engineered_Features')
+#both of these should be moved to data compiler
+eng = eng[pd.notna(eng['Year'])] #removes entires that don't have a plant
+eng.drop_duplicates(inplace=True) #removes duplicates
+print(eng.columns)
 
-    pred_data = CountVectorizer().fit_transform(pred)
-    result = linreg.predict(pred_data)
-    plt.scatter(pred_std,result)
+todrop = ['Utility','Zipcode','Plant_Code','Plant_Id','Fuel_Group','County']
+    
+def Capacity(df):
+    train_df = pd.DataFrame()
+    
+    scaler = preprocessing.MinMaxScaler()
+
+    train_df['Label'] =  df['Net_Generation_MWh']
+    train_df['Fuel_Cost_Mean']=df['Fuel_Cost_Mean'].fillna(0)
+    train_df['Fuel_Cost_StDev']=df['Fuel_Cost_StDev'].fillna(0)
+    train_df['Fuel_Cost_Var']=df['Fuel_Cost_Var'].fillna(0)
+
+    fuel = df['AER_Fuel_Code']
+    fuel.dropna(axis=0, how = 'any',inplace =True)
+    fuels_OH = pd.get_dummies(fuel)
+    
+    sector = df['Sector']
+    sector.dropna(axis=0, how = 'any',inplace =True)
+    sector_OH = pd.get_dummies(sector)
+    
+    power_list = ['5 power', '10 power','25 power', '50 power','100 power',
+                '150 power', '200 power', '300 power']
+    power = df[power_list]
+    power.dropna(axis=0, how = 'any',inplace =True)
+    power_scale = pd.DataFrame(scaler.fit_transform(power),columns = power_list)
+    
+    pop_list = ['5 pop', '10 pop','25 pop', '50 pop','100 pop',
+                '150 pop', '200 pop', '300 pop']
+    pop = df[pop_list]
+    pop.dropna(axis=0, how = 'any',inplace =True)
+    pop_scale = pd.DataFrame(scaler.fit_transform(power),columns = pop_list)
+    
+    
+    train_df = train_df.join([sector_OH,power_scale,fuels_OH,pop_scale], how='outer') 
+    
+    years = df['Year'].values.reshape(len(df['Year']),1)
+    years_scaled = scaler.fit_transform(years)
+    train_df['Year']=pd.Series(years_scaled.flatten())
+    
+    train_df.dropna(axis=0, how = 'any',inplace =True)
+
+    
+    train_label = train_df['Label']
+    train_df.drop(['Label'],axis =1,inplace=True)
+    
+    Forest = RandomForestRegressor(n_estimators = 50)
+    Forest.fit(train_df, train_label)
+    #importance =linreg.coef_
+    importance = pd.DataFrame(Forest.feature_importances_,
+                              index = train_df.columns.values,
+                              columns = ['Import'])
+    #test_label = train_df['Label']
+    result = pd.Series(Forest.predict(train_df))
+    
+    print(len(train_df))
+    print(Forest.score(train_df, train_label))
+    
+    print(importance.sort_values(by=['Import'], ascending = False))
+    plt.loglog(train_label,result, linestyle='None', marker = '.')
+    plt.xlabel('From Data')
+    plt.ylabel('Prediction')
     plt.show()
-    
-def NNeighbor():
-    Gen_label = setup['Net Generation MWh']
-    train_data = setup.copy(deep=True)
-    train_data.drop(labels = ['Efficiency','Fuel Consumption MWh','Primary Mover',
-                              'AER Fuel Code','County','Latitude','Longitude',
-                              'Plant State','Utility','Net Generation MWh'], axis=1,
-                                inplace=True)
-    
-    print(train_data.head())
-    linreg = linear_model.Ridge()  
-    linreg.fit(train_data, Gen_label)
-    
-    result = linreg.predict(train_data)
-    plt.scatter(Gen_label,result)
-    plt.scatter(Gen_label,Gen_label)
+    plt.close()
+    resid = train_label-result
+    plt.plot(resid)
+    plt.show()
+    plt.close()
 
-    plt.show() 
+    
+Capacity(eng)   
     
 def Clustering():
     import seaborn as sns
@@ -158,5 +135,3 @@ def Clustering():
     results.plot.scatter(x = 'Longitude',y='Latitude', c=results['color'].apply(lambda x: colors[x]))
     
     #plt.scatter(*Lat_long_data, c=(km.labels_), cmap=plt.cm.plasma)
-
-Clustering()
